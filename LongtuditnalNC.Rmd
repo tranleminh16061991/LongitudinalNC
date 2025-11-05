@@ -38,4 +38,117 @@ setwd("C:/Users/admin/Documents/GitHub/LongitudinalNC")
 df <- read.csv("Longitudinal_BIA_StableNCvsProgressiveNC.csv", 
                header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
 
+df$COGNITIVESTAT <- df$COGNITIVESTAT %>%
+    str_replace_all("\\.", "")   %>%      # Remove all dots
+  str_trim(side = "both")       # Remove leading/trailing spaces
+
+df <- df %>% add_count(USUBJID, name = "visit_count")
+
+view(dfSummary(df ))
+
+#get Empty COGNIVESTATE per year
+#In the subsequent analysis
+df %>%
+  group_by(year) %>%
+  summarise(empty_or_na_COGNIVESTATE = sum(is.na(COGNITIVESTAT) | COGNITIVESTAT == "")) %>%
+  print()
+```
+
+```{r}
+df.long <- df %>% 
+   # filter(Group %in% c("CN", "MCI", "AD"), year %in% 2019:2024, r_squared >= 0.95) %>%
+  filter(Group %in% c("CN", "MCI", "AD"), year %in% 2019:2024) %>%
+  filter(!is.na(COGNITIVESTAT) & COGNITIVESTAT != "") %>% # drop NA or empty
+  filter(!COGNITIVESTAT %in% c("aMCI,Dep")) %>%
+  drop_na() %>% 
+  add_count(USUBJID, name = "visit_count") %>%
+  mutate(
+    # Treat SMI as CN
+    COGNITIVESTAT = ifelse(COGNITIVESTAT == "SMI", "CN", COGNITIVESTAT)
+  ) 
+
+# Keep only subjects with at least 2 valid records
+df.long_multi <- df.long %>%
+  group_by(USUBJID) %>%
+  filter(n() >= 2) %>%
+  ungroup()
+
+(df_changes <- df.long_multi %>%
+  arrange(USUBJID, year) %>%  # ensure chronological order
+  group_by(USUBJID) %>%
+  summarise(
+    #Status_Changed = n_distinct(COGNITIVESTAT, na.rm = TRUE) > 1,
+    Transitions = paste(COGNITIVESTAT, collapse = " -> ")
+  ))
+
+(df_summary <- df_changes %>%
+  group_by(Transitions) %>%
+  summarise(Count = n()) %>%
+  mutate( Percentage = round(Count / sum(Count) * 100, 1)) %>%
+  arrange(desc(Count)))
+
+#df_demo <- df.long_multi %>% select( Group, SEX:EDUYR, MMSE,AGE) 
+view(dfSummary(df.long_multi ))
+```
+
+
+```{r}
+#ONly take note of inital and final transitions
+df_overall <- df.long_multi %>%
+  mutate(
+    COGNITIVESTAT = case_when(
+      COGNITIVESTAT %in% c("aMCI", "naMCI") ~ "MCI",
+      COGNITIVESTAT == "SMI" ~ "CN",
+      TRUE ~ COGNITIVESTAT
+    )
+  ) %>%
+  arrange(USUBJID, year) %>%
+  group_by(USUBJID) %>%
+  mutate(
+    Initial_Status = first(COGNITIVESTAT),
+    Final_Status   = last(COGNITIVESTAT)
+  ) %>%
+  mutate(
+    Transition = paste(Initial_Status, "->", Final_Status),
+    Change_Type = case_when(
+      Initial_Status == Final_Status ~ "Stable",
+      Initial_Status == "CN" & Final_Status %in% c("MCI", "AD") ~ "Progressive",
+      Initial_Status == "MCI" & Final_Status == "AD" ~ "Progressive",
+      Initial_Status == "MCI" & Final_Status == "CN" ~ "Reverted",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  ungroup()
+
+
+view(dfSummary(df_overall )) 
+
+(df_transition_summary <- df_overall %>%
+  group_by(Transition) %>%
+  summarise(
+    Count = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Percentage = round(Count / sum(Count) * 100, 1)
+  ) %>%
+  arrange(desc(Count)))
+
+#get Unique Particpants for analysis
+df_unique_transitions <- df_overall %>%
+  select(USUBJID, Transition, Change_Type) %>%  # keep only relevant columns
+  distinct()  # keep only unique rows by ID, Transition, Change_Type
+
+(df_summary <- df_unique_transitions %>%
+  group_by(Transition, Change_Type) %>%
+  summarise(
+    Count = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Percentage = round(Count / sum(Count) * 100, 1)
+  ) %>%
+  arrange(desc(Count)))
+
+
 ```
