@@ -52,9 +52,7 @@ df %>%
   group_by(year) %>%
   summarise(empty_or_na_COGNIVESTATE = sum(is.na(COGNITIVESTAT) | COGNITIVESTAT == "")) %>%
   print()
-```
 
-```{r}
 df.long <- df %>% 
    # filter(Group %in% c("CN", "MCI", "AD"), year %in% 2019:2024, r_squared >= 0.95) %>%
   filter(Group %in% c("CN", "MCI", "AD"), year %in% 2019:2024) %>%
@@ -149,10 +147,6 @@ df_unique_transitions <- df_overall %>%
   ) %>%
   arrange(desc(Count)))
 
-
-```
-
-```{r}
 df_long.analysis <- df_overall  %>%  drop_na() %>% mutate_if(is.character, as.factor) %>%   droplevels() %>%
   add_count(USUBJID, name = "visit_count") #%>% filter(Transition != "CN -> CN")
 
