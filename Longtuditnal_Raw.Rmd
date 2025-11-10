@@ -38,8 +38,12 @@ Required Libraries
 ```{r}
 # Read your data ( KIOM_USER or admin )
 setwd("C:/Users/KIOM_USER/Documents/GitHub/LongitudinalNC") 
-df <- read.csv("Longitudinal_BIA_StableNCvsProgressiveNC.csv", 
+df <- read.csv("Chosun5yBIApreprocess.csv", 
                header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+
+df$COGNITIVESTAT <- df$COGNITIVESTAT %>%
+    str_replace_all("\\.", "")   %>%      # Remove all dots
+  str_trim(side = "both")       # Remove leading/trailing spaces
 
 df <- df %>% add_count(USUBJID, name = "visit_count")
 
@@ -58,7 +62,7 @@ df.long <- df %>%
   ) 
 
 # Keep only subjects with at least 2 valid records
-df.long_multi <- df.long %>%
+df.long_multi <- df.long %>%                 
   group_by(USUBJID) %>%
   filter(n() >= 2) %>%
   ungroup()
@@ -120,18 +124,6 @@ view(dfSummary(df_overall ))
   ) %>%
   arrange(desc(Count)))
 
-df_long.analysis <- df_overall %>%
-  drop_na() %>%
-  mutate(datetest = mdy(datetest)) %>%              
-  group_by(USUBJID) %>%
-  arrange(datetest) %>%                             
-  mutate(
-    baseline_date = min(datetest, na.rm = TRUE),
-    elapsed_years = as.numeric(difftime(datetest, baseline_date, units="days")) / 365.25
-  ) %>%
-  select(-baseline_date) %>%
-  ungroup()
-
 #get Unique Particpants for analysis
 df_unique_transitions <- df_overall %>%
   select(USUBJID, Transition, Change_Type) %>%  # keep only relevant columns
@@ -178,7 +170,17 @@ view(dfSummary(df.long_multi ))
 ```
 
 ```{r}
-
+df_long.analysis <- df_overall %>%
+  drop_na() %>%
+  mutate(datetest = mdy(datetest)) %>%              
+  group_by(USUBJID) %>%
+  arrange(datetest) %>%                             
+  mutate(
+    baseline_date = min(datetest, na.rm = TRUE),
+    elapsed_years = as.numeric(difftime(datetest, baseline_date, units="days")) / 365.25
+  ) %>%
+  select(-baseline_date) %>%
+  ungroup()
 
 # 0) Safe numeric cleaner
 clean_numeric <- function(x) {
@@ -282,7 +284,7 @@ append_test_and_shapiro <- function(tbl) {
 # 3) Bioimpedance list
 bioimpedance_vars <- c(
   "bmi", "ac", "whr", "pbcm", "pbf", "bmr", "tbw_ffm",
-  "ecw_tcw", "PA50_total", "ECW_ICW_upper", "ECW_ICW_lower",
+  "ecw_tcw", "PA50_total", "ECW_ICW_upper", "PA50_total", "ECW_ICW_lower",
   "Water_Lean_upper", "Water_Lean_lower",
   "R_upper", "R_lower", "Xc_upper", "Xc_lower",
   "PA_upper", "PA_lower", "R_H_upper", "Xc_H_upper", "R_H_lower", "Xc_H_lower"
@@ -318,8 +320,10 @@ df_table1 <- df_baseline |>
   select(any_of(cols_table1)) |>
   mutate(across(-Change_Type, clean_numeric))
 
+stopifnot(is.numeric(df_table1$MMSE))
+
 # 6) Bioimpedance selection & clean
-df_bia_baseline <- df_baseline |>
+df_bia <- df_baseline |>
   select(Change_Type, any_of(bioimpedance_vars)) |>
   mutate(across(-Change_Type, clean_numeric))
 
@@ -352,7 +356,7 @@ tbl_table1 <- df_table1 |>
 
 tbl_table1 <- append_test_and_shapiro(tbl_table1)
 
-tbl_bia <- df_bia_baseline |>
+tbl_bia <- df_bia |>
   tbl_summary(
     by = Change_Type,
     type = all_continuous() ~ "continuous",
@@ -394,37 +398,20 @@ vars_table3 <- intersect(c("ECW_ICW_upper", "ECW_ICW_lower", "Water_Lean_upper",
 covariates <- intersect(c("AGE", "SEX", "EDUYR", "gds"), names(df_baseline))
 
 # Customized function to create comparison table with Mean (SD) format
-library(effectsize)
-library(emmeans)
-library(dplyr)
-library(flextable)
-
-# Hàm cải tiến để tính toán bảng so sánh với hiệu ứng kích thước (Hedges' g) đầy đủ
 make_compare_table <- function(df, var, covars, group = "Change_Type") {
   if (!is.numeric(df[[var]])) return(NULL)
   
-  # Mô hình hồi quy tuyến tính, điều chỉnh covariates
-  formula_lm <- as.formula(paste(var, "~", group, "+", paste(covars, collapse = "+")))
-  model <- lm(formula_lm, data = df)
+  # Linear model adjusting for covariates
+  model <- lm(as.formula(paste(var, "~", group, "+", paste(covars, collapse = "+"))), data = df)
   emm <- suppressMessages(emmeans(model, specs = group))
   pair <- pairs(emm, adjust = "tukey")
   pair_df <- as.data.frame(pair)
   
-  # Lấy các nhóm
-  grp_lev <- levels(df[[group]])
-  data1 <- df[[var]][df[[group]] == grp_lev[1]]
-  data2 <- df[[var]][df[[group]] == grp_lev[2]]
+  # Effect size (Hedges' g)
+  eff <- NA
+  try({ eff <- effectsize::hedges_g(model, var = group)[1,"Hedges_g"] }, silent = TRUE)
   
-  # Tính Hedges' g và khoảng tin cậy dựa trên raw data
-  eff_res <- tryCatch({
-    effectsize::hedges_g(data1, data2)
-  }, error = function(e) return(NULL))
-  
-  hedges_g_val <- if (!is.null(eff_res)) eff_res$Hedges_g else NA
-  hedges_g_ci_low <- if (!is.null(eff_res)) eff_res$CI_low else NA
-  hedges_g_ci_high <- if (!is.null(eff_res)) eff_res$CI_high else NA
-  
-  # Tính trung bình và độ lệch chuẩn từng nhóm
+  # Compute group summaries (N, Mean, SD)
   means <- df %>%
     group_by(.data[[group]]) %>%
     summarise(
@@ -432,12 +419,13 @@ make_compare_table <- function(df, var, covars, group = "Change_Type") {
       Mean = mean(.data[[var]], na.rm = TRUE),
       SD = sd(.data[[var]], na.rm = TRUE)
     ) %>% 
-    arrange(match(.data[[group]], grp_lev))
+    arrange(match(.data[[group]], levels(df[[group]])))
   
+  # Format Mean (SD)
   mean_sd_1 <- sprintf("%.2f (%.2f)", means$Mean[1], means$SD[1])
   mean_sd_2 <- sprintf("%.2f (%.2f)", means$Mean[2], means$SD[2])
   
-  # Tạo bảng kết quả với tất cả thông số
+  # Output table row with formatted means
   out <- tibble::tibble(
     Variable = var,
     Mean_SD_StableCN = mean_sd_1,
@@ -446,30 +434,27 @@ make_compare_table <- function(df, var, covars, group = "Change_Type") {
     CI_lower = pair_df$lower.CL[1],
     CI_upper = pair_df$upper.CL[1],
     p.value = pair_df$p.value[1],
-    Hedges_g = hedges_g_val,
-    Hedges_g_CI_low = hedges_g_ci_low,
-    Hedges_g_CI_high = hedges_g_ci_high
+    Hedges_g = eff
   )
   
   return(out)
 }
 
-# Tạo bảng so sánh hiệu ứng cho các nhóm biến như trước
+# Generate tables for the two variable groups
 table2 <- do.call(rbind, lapply(vars_table2, function(x) make_compare_table(df_baseline, x, covariates)))
 table3 <- do.call(rbind, lapply(vars_table3, function(x) make_compare_table(df_baseline, x, covariates)))
 
-# Chuyển sang flextable với in đậm p-value signifance
+# Convert to flextable with significant p-value bolded
 table2_ft <- flextable(table2) %>%
   bold(j = "p.value", i = ~ p.value < 0.05) %>%
   autofit()
-
 table3_ft <- flextable(table3) %>%
   bold(j = "p.value", i = ~ p.value < 0.05) %>%
   autofit()
 
-# In bảng ra console hoặc tài liệu
-print(table2_ft)
-print(table3_ft)
+# Print tables
+table2_ft
+table3_ft
 
 
 ```
