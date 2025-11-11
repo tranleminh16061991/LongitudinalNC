@@ -42,20 +42,19 @@ Required Libraries
 
 ```{r}
 # Read your data ( KIOM_USER or admin )
-setwd("C:/Users/KIOM_USER/Documents/GitHub/LongitudinalNC") 
-df <- read.csv("Longitudinal_BIA_StableNCvsProgressiveNC.csv", 
+setwd("C:/Users/admin/Documents/GitHub/LongitudinalNC") 
+df <- read.csv("Longitudinal_StableNCvsProgressiveNC.csv", 
                header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
 
 df <- df %>% add_count(USUBJID, name = "visit_count")
 
+df$COGNITIVESTAT <- df$COGNITIVESTAT %>%
+    str_replace_all("\\.", "")   %>%      # Remove all dots
+  str_trim(side = "both")       # Remove leading/trailing spaces
+
 view(dfSummary(df ))
 
 df.long <- df %>% 
-   # filter(COGNITIVESTAT %in% c("CN", "MCI", "AD"), year %in% 2019:2024, r_squared >= 0.95) %>%
-  filter(Group %in% c("CN", "MCI", "AD"), year %in% 2019:2024) %>%
-  filter(!is.na(COGNITIVESTAT) & COGNITIVESTAT != "") %>% # drop NA or empty
-  filter(!COGNITIVESTAT %in% c("aMCI,Dep")) %>%
-  drop_na() %>% 
   add_count(USUBJID, name = "visit_count") %>%
   mutate(
     # Treat SMI as CN
@@ -118,7 +117,6 @@ view(dfSummary(df_overall ))
   group_by(Transition) %>%
   summarise(
     Count = n(),
-    .groups = "drop"
   ) %>%
   mutate(
     Percentage = round(Count / sum(Count) * 100, 1)
@@ -126,7 +124,6 @@ view(dfSummary(df_overall ))
   arrange(desc(Count)))
 
 df_long.analysis <- df_overall %>%
-  drop_na() %>%
   mutate(datetest = mdy(datetest)) %>%              
   group_by(USUBJID) %>%
   arrange(datetest) %>%                             
@@ -146,14 +143,13 @@ df_unique_transitions <- df_overall %>%
   group_by(Transition, Change_Type) %>%
   summarise(
     Count = n(),
-    .groups = "drop"
   ) %>%
   mutate(
     Percentage = round(Count / sum(Count) * 100, 1)
   ) %>%
   arrange(desc(Count)))
 
-df_long.analysis <- df_overall  %>%  drop_na() %>% mutate_if(is.character, as.factor) %>%   droplevels() %>%
+df_long.analysis <- df_overall  %>%   mutate_if(is.character, as.factor) %>%   
   add_count(USUBJID, name = "visit_count") #%>% filter(Transition != "CN -> CN")
 
 # Relevel Change_Type with "Stable" as reference
@@ -171,7 +167,6 @@ df_unique_transitions <- df_long.analysis %>%
   group_by(Transition, Change_Type) %>%
   summarise(
     Count = n(),
-    .groups = "drop"
   ) %>%
   mutate(
     Percentage = round(Count / sum(Count) * 100, 1)
