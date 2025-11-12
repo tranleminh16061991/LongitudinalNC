@@ -1,5 +1,5 @@
 ---
-title: "Longitudinal trajectories of segmental bioimpedance and cognitive conversion in older adults - Part 1"
+title: "Longitudinal trajectories of segmental bioimpedance and cognitive conversion in older adults"
 output: html_notebook
 ---
 
@@ -35,6 +35,8 @@ library(broom.mixed)
 library(gtsummary)
 library(flextable)
 library(summarytools)
+library(tableone)
+library(effsize) 
 
 ```
 
@@ -127,99 +129,122 @@ df_baseline <- df_baseline %>%
 ```
 
 ```{r}
-library(dplyr)
 library(tableone)
-library(ggplot2)
-library(effsize) # for Cohen's d if needed
+library(effsize)
 
-# Ensure group variable and factors
 df_baseline$SEX <- as.factor(df_baseline$SEX)
 df_baseline$Change_Type <- as.factor(df_baseline$Change_Type)
 
-# Variable sets
-vars_table1 <- c('SEX','AGE','EDUYR','gds','kdsq','visitcount',
-                 'MMSE','SNSB_attention','SNSB_language','SNSB_visuospatial','SNSB_memory','SNSB_frontal')
+vars_table1 <- c('SEX','AGE','EDUYR','gds','kdsq','visitcount','MMSE',
+                 'SNSB_attention','SNSB_language','SNSB_visuospatial','SNSB_memory','SNSB_frontal')
 vars_table2 <- c('height','weight','Waistcir','Hipcir','sysbp','diabp','bmi','ac','whr',
-                 'pbcm','pbf','bmr','tbw_ffm','ecw_tcw')
-vars_table3 <- c('PA50_total','ECW_ICW_upper','ECW_ICW_lower',
-                 'Water_Lean_upper','Water_Lean_lower','R_upper','R_lower','Xc_upper','Xc_lower',
-                 'PA_upper','PA_lower','R_H_upper','R_H_lower','Xc_H_upper','Xc_H_lower')
+                 'pbcm','pbf','bmr','tbw_ffm','ecw_tcw','PA50_total')
+vars_table3 <- c('ECW_ICW_upper','ECW_ICW_lower','Water_Lean_upper','Water_Lean_lower',
+                 'R_upper','R_lower','Xc_upper','Xc_lower','PA_upper','PA_lower',
+                 'R_H_upper','R_H_lower','Xc_H_upper','Xc_H_lower')
 group_var <- "Change_Type"
+covars <- c("AGE", "SEX", "EDUYR")
 
-# Table summaries
 tab1 <- CreateTableOne(vars=vars_table1, strata=group_var, data=df_baseline)
 print(tab1, showAllLevels=TRUE, quote=TRUE, noSpaces=TRUE)
 
-tab2 <- CreateTableOne(vars=vars_table2, strata=group_var, data=df_baseline)
-print(tab2, showAllLevels=TRUE, quote=TRUE, noSpaces=TRUE)
-
-tab3 <- CreateTableOne(vars=vars_table3, strata=group_var, data=df_baseline)
-print(tab3, showAllLevels=TRUE, quote=TRUE, noSpaces=TRUE)
-
-
-# Group comparisons with robust NA handling
-get_pvals <- function(varlist, groupvar, df) {
-  result <- sapply(varlist, function(v) {
-    vals <- df[[v]]
-    g <- df[[groupvar]]
-
-    # Remove cases with NA in either vector
+get_pvals_es <- function(varlist, groupvar, df){
+  res <- lapply(varlist, function(v){
+    vals <- df[[v]]; g <- df[[groupvar]]
     non_missing <- !(is.na(vals) | is.na(g))
-    vals_nomiss <- vals[non_missing]
-    g_nomiss <- g[non_missing]
-
-    if (length(unique(g_nomiss)) != 2) return(NA) # Only handle two groups
-
-    # If numeric/categorical
-    if (is.numeric(vals_nomiss)) {
-      p_norm <- shapiro.test(vals_nomiss)$p.value
-      if (p_norm > 0.05) {
-        ttest <- t.test(vals_nomiss ~ g_nomiss)
-        return(ttest$p.value)
-      } else {
-        wilc <- wilcox.test(vals_nomiss ~ g_nomiss)
-        return(wilc$p.value)
+    vals_nm <- vals[non_missing]
+    g_nm <- g[non_missing]
+    pval <- NA; effsize <- NA
+    if (length(unique(g_nm)) != 2) return(list(pval=NA,effsize=NA))
+    if (is.numeric(vals_nm) | is.integer(vals_nm)){
+      p_norm <- tryCatch(shapiro.test(vals_nm)$p.value,error=function(e) NA)
+      if (!is.na(p_norm) && p_norm > 0.05){
+        ttest <- t.test(vals_nm ~ g_nm)
+        pval <- ttest$p.value
+        effsize <- effsize::cohen.d(vals_nm, g_nm)$estimate
+      }else{
+        wilcox <- wilcox.test(vals_nm ~ g_nm)
+        pval <- wilcox$p.value
+        effsize <- effsize::cohen.d(vals_nm, g_nm, hedges.correction=TRUE)$estimate
       }
-    } else {
-      tbl <- table(vals_nomiss, g_nomiss)
-      if (any(tbl < 5)) {
-        return(fisher.test(tbl)$p.value)
-      } else {
-        return(chisq.test(tbl)$p.value)
-      }
+    }else{
+      tbl <- table(vals_nm, g_nm)
+      pval <- if(any(tbl < 5)) fisher.test(tbl)$p.value else chisq.test(tbl)$p.value
+      effsize <- NA
     }
+    return(list(pval=pval,effsize=effsize))
   })
-  return(result)
+  names(res) <- varlist
+  return(res)
+}
+result_table1 <- get_pvals_es(vars_table1, group_var, df_baseline)
+print(result_table1)
+
+get_group_coef <- function(res, group_var, df) {
+  levs <- levels(df[[group_var]])
+  target_lev <- levs[2]
+  target_name <- grep(target_lev, rownames(coef(res)), value=TRUE)
+  if(length(target_name) == 1) {
+    pval <- coef(res)[target_name, "Pr(>|t|)"]
+    est <- coef(res)[target_name, "Estimate"]
+  } else {
+    pval <- NA
+    est <- NA
+  }
+  return(list(pval=pval, estimate=est))
 }
 
-pvals_table1 <- get_pvals(vars_table1, group_var, df_baseline)
-pvals_table2 <- get_pvals(vars_table2, group_var, df_baseline)
-pvals_table3 <- get_pvals(vars_table3, group_var, df_baseline)
+ancova_tab2 <- lapply(vars_table2, function(v){
+  formula <- as.formula(paste(v, "~", group_var, "+ AGE + SEX + EDUYR"))
+  model <- lm(formula, data=df_baseline, na.action=na.exclude)
+  res <- summary(model)
+  grp <- get_group_coef(res, group_var, df_baseline)
+  return(list(pval=grp$pval, estimate=grp$estimate, model=res))
+})
+names(ancova_tab2) <- vars_table2
 
-print(pvals_table1)
-print(pvals_table2)
-print(pvals_table3)
+ancova_tab3 <- lapply(vars_table3, function(v){
+  formula <- as.formula(paste(v, "~", group_var, "+ AGE + SEX + EDUYR"))
+  model <- lm(formula, data=df_baseline, na.action=na.exclude)
+  res <- summary(model)
+  grp <- get_group_coef(res, group_var, df_baseline)
+  return(list(pval=grp$pval, estimate=grp$estimate, model=res))
+})
+names(ancova_tab3) <- vars_table3
 
-# Adjusted comparisons (ANCOVA example)
-ancova_result <- summary(lm(R_lower ~ Change_Type + AGE + SEX + EDUYR, data = df_baseline, na.action = na.exclude))
-print(ancova_result)
-
-# Effect size: Cohen's d (robust NA-handling)
-cohen_d <- function(var, group, data) {
-  vals <- data[[var]]
-  g <- data[[group]]
-  non_missing <- !(is.na(vals) | is.na(g))
-  effsize::cohen.d(vals[non_missing], g[non_missing])
+print_ancova <- function(res_list, units = NULL) {
+  for (v in names(res_list)) {
+    est <- res_list[[v]]$estimate
+    pval <- res_list[[v]]$pval
+    u <- if(!is.null(units) && !is.na(units[v])) units[v] else ""
+    cat(sprintf("%-25s Estimate: %8.3f %-5s | p-value: %.4f\n", v, est, u, pval))
+  }
 }
-cohen_d("AGE", group_var, df_baseline)
 
-# Example plot: Violin plot for a key biomarker
+units_table2 <- c(height = "cm", weight = "kg", BMI = "", whr = "", pbcm = "%", pbf = "%", bmr = "kcal", ecw_tcw = "%", tbw_ffm = "%", PA50_total = "degree")
+units_table3 <- c(
+  ECW_ICW_upper = "%", ECW_ICW_lower = "%", Water_Lean_upper = "%", Water_Lean_lower = "%",
+  R_upper = "Ω", R_lower = "Ω", Xc_upper = "Ω", Xc_lower = "Ω", PA_upper = "degree", PA_lower = "degree",
+  R_H_upper = "Ω", R_H_lower = "Ω", Xc_H_upper = "Ω", Xc_H_lower = "Ω"
+)
+
+cat("\n===== Table 2: ANCOVA Results =====\n")
+print_ancova(ancova_tab2, units_table2)
+
+cat("\n===== Table 3: ANCOVA Results =====\n")
+print_ancova(ancova_tab3, units_table3)
+
 ggplot(df_baseline, aes(x=Change_Type, y=R_lower, fill=Change_Type)) +
   geom_violin(trim=FALSE) +
   geom_boxplot(width=0.1, fill="white") +
-  labs(title="R_lower by Group", y="R_lower")
+  labs(title="R_lower by Group", y="R_lower") +
+  theme_minimal()
 
 write.csv(print(tab1, quote = TRUE, noSpaces = TRUE), "table1_baseline.csv")
-write.csv(print(tab2, quote = TRUE, noSpaces = TRUE), "table2_baseline.csv")
-write.csv(print(tab3, quote = TRUE, noSpaces = TRUE), "table3_baseline.csv")
+
+tbl2_results <- sapply(names(ancova_tab2), function(var) c(Estimate = ancova_tab2[[var]]$estimate, Pvalue = ancova_tab2[[var]]$pval))
+write.csv(tbl2_results, "table2_ancova.csv")
+tbl3_results <- sapply(names(ancova_tab3), function(var) c(Estimate = ancova_tab3[[var]]$estimate, Pvalue = ancova_tab3[[var]]$pval))
+write.csv(tbl3_results, "table3_ancova.csv")
+
 ```
