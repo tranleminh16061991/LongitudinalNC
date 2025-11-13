@@ -89,7 +89,6 @@ df4 <- df3 %>%
 ```
 
 ```{r}
-# Step 8: Summarise transition groups
 group_counts <- df4 %>%
   group_by(Transition, Change_Type) %>%
   summarise(count = n()) %>%
