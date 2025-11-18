@@ -6,6 +6,10 @@ Output English, including Vietsub (different)
 
 https://www.perplexity.ai/search/you-are-an-expert-in-the-field-Muu8tSrrQii1W77pKEgEow#1
 
+Steps for analysis
+https://www.perplexity.ai/search/giai-thich-ngan-gon-tung-doan-3JYSJDIrQnu7bOZm2N5Cuw#14
+
+
 
 
 Góc nhìn triển khai bằng R
