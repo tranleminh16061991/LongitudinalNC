@@ -44,9 +44,6 @@ Required Libraries
 ```{r}
 df <- read.csv("Chosun5yBIApreprocess.csv", stringsAsFactors = FALSE)
 
-remove_list <- c("E_237", "F_242", "a_531", "E_391", "G_31", "F_385", "a_281")
-df <- df %>% filter(!(k_no %in% remove_list))
-
 df <- df %>%
   mutate(datetest = as.Date(datetest, format = "%m/%d/%Y"))
 
@@ -117,7 +114,7 @@ print(participant_group_summary)
 
 ```{r}
 df_baseline <- df4 %>%
-  filter(Change_Type %in% c("StableCN", "CNtransitMCI"))
+  filter(Change_Type %in% c("StableMCI", "MCItransitCN"))
 
 df_baseline <- df_baseline %>%
   group_by(USUBJID) %>%
@@ -258,7 +255,7 @@ bia_vars <- c("MMSE","SNSB_attention","SNSB_language", "SNSB_visuospatial", "SNS
               "PA_upper","PA_lower","R_H_upper","R_H_lower","Xc_H_upper","Xc_H_lower")
 
 df_long.analysis <- df4 %>%
-  filter(Change_Type %in% c("StableCN", "CNtransitMCI"))
+  filter(Change_Type %in% c("StableMCI", "MCItransitCN"))
 
 spaghetti_plots <- lapply(bia_vars, function(var) {
   ggplot(df_long.analysis, aes(x = elapsed_years, y = .data[[var]], group = USUBJID, color = Change_Type)) +
@@ -485,7 +482,7 @@ analyze_longitudinal_trends <- function(data,
 
 
 #Plot the slopes
-plot_slopes <- function(model_summary_list,  colors = c("StableCN" = "#0072B2", "CNtransitMCI" = "#E69F00")) {
+plot_slopes <- function(model_summary_list,  colors = c("StableMCI" = "#0072B2", "MCItransitCN" = "#E69F00")) {
 
   # Combine all model summaries
   all_summaries <- bind_rows(model_summary_list)
@@ -602,7 +599,7 @@ plot_pvalues <- function(model_summary_list, pvalue_pattern = "^p_diff_slopes") 
 plot_lmer_interaction_with_p <- function(data, response = "TAR", 
                                         xvar = "elapsed_years", groupvar = "Change_Type",
                                         covariates = c("AGE", "SEX", "EDUYR"),
-                                        colors = c("StableCN" = "#0072B2", "CNtransitMCI" = "#E69F00"), show.legend = FALSE) {
+                                        colors = c("StableMCI" = "#0072B2", "MCItransitCN" = "#E69F00"), show.legend = FALSE) {
   # Build formulas
   full_formula <- paste0(response, " ~ ", xvar, "*", groupvar, " + ",
                          paste(covariates, collapse = " + "), " + (1 + ", xvar, " | USUBJID)")
@@ -770,7 +767,7 @@ cowplot::save_plot("Longitudinal_Analysis_psd_flat_ratios.pdf", combined, ncol =
 variables <- c("bmi", "whr", "pbcm", "pbf", "bmr", "tbw_ffm", "ecw_tcw", "PA50_total")
 reference_group <- "StableCN"
 comparison_groups <- c("CNtransitMCI")
-colors.legend <- c("StableCN" = "#0072B2", "CNtransitMCI" = "#E69F00")
+colors.legend <- c("StableMCI" = "#0072B2", "MCItransitCN" = "#E69F00")
 
 results <- lapply(variables, function(var) {
   analyze_longitudinal_trends(data = df_long.analysis, response = var, groupvar = "Change_Type", reference_group = reference_group, comparison_groups = comparison_groups)
