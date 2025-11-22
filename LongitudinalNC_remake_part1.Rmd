@@ -303,7 +303,15 @@ library(dplyr)
 library(tibble)
 library(ggeffects)
 library(forcats)
+library(ggplot2)  # For plot annotation
 
+# --- Group Colors ---
+colors.legend <- c(
+  "StableCN" = "#1f77b4",      # Blue (Stable/Control)
+  "CNtransitMCI" = "#ff7f0e"   # Orange (Transition group)
+)
+
+# --- Data Prep ---
 df_long.analysis$Change_Type <- as.factor(df_long.analysis$Change_Type)
 df_long.analysis$Change_Type <- fct_recode(
   df_long.analysis$Change_Type,
@@ -434,7 +442,6 @@ analyze_longitudinal_trends_LRT <- function(
     )
   }
 })
-
   
   modelsummary <- bind_rows(meta_rows)
   list(
@@ -475,7 +482,6 @@ write.csv(allsummaries, "Bioimpedance_LME_LRT_summary.csv", row.names = FALSE)
 
 print("Check complete: Output summary table written!")
 
-
 # --- Batch Plot Generation (Wald + LRT) ---
 output_dir_wald <- "Bioimpedance_Trajectory_WaldPlots"
 output_dir_lrt <- "Bioimpedance_Trajectory_LRTPlots"
@@ -493,7 +499,7 @@ plots_lrt <- lapply(biavars, function(var)
     data = df_long.analysis,
     response = var,
     colors = colors.legend,
-    show.legend = FALSE
+    show.legend = TRUE  # Change this to TRUE to show group legend
   )
 )
 for (i in seq_along(biavars)) {
@@ -511,6 +517,31 @@ for (i in seq_along(biavars)) {
       plot = pl, width = 7, height = 5, dpi = 300
     )
   }
+}
+
+# --- The Key Plot Function (only this part is new/changed!) ---
+plot_lmer_interaction_with_p <- function(data, response, colors, show.legend = TRUE) {
+  ggplot(data, aes(
+      x = elapsed_years,
+      y = .data[[response]],
+      color = Change_Type,
+      group = Change_Type
+  )) +
+    stat_summary(fun = mean, geom = "line", size = 1.1) +
+    scale_color_manual(values = colors) +
+    labs(
+      title = paste(response, "trajectory by group"),
+      color = "Group",
+      x = "elapsed_years",
+      y = response
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      legend.position = if(show.legend) "top" else "none",
+      legend.title = element_text(size = 13),
+      legend.text = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5)
+    )
 }
 
 ```
@@ -564,6 +595,5 @@ diagnostics_list <- lapply(seq_along(biavars), function(i) {
 })
 diagnostics_df <- do.call(rbind, diagnostics_list)
 write.csv(diagnostics_df, "Diagnostics/Bioimpedance_LME_diagnostics.csv", row.names = FALSE)
-
 
 ```
