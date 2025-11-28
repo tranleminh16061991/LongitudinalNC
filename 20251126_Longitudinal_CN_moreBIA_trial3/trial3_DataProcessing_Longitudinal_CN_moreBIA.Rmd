@@ -307,7 +307,7 @@ df <- df %>%
     ECW_ICW_RA = ecw_tbw_ra / (1 - ecw_tbw_ra),
     ECW_ICW_LA = ecw_tbw_la / (1 - ecw_tbw_la),
     ECW_ICW_RL = ecw_tbw_rl / (1 - ecw_tbw_rl),
-    ECW_ICW_LL = ecw_tbw_ll / (1 - ecw_tbw_ll),   
+    ECW_ICW_LL = ecw_tbw_ll / (1 - ecw_tbw_ll), 
     SW_upper = (sw_ra + sw_la) / 2,
     SW_lower = (sw_rl + sw_ll) / 2,
     SL_upper = (sl_ra + sl_la) / 2,
@@ -325,11 +325,13 @@ df <- df %>%
     Xc_lower = (rl_xc50 + ll_xc50) / 2,
     PA_upper = (ra_pa50 + la_pa50) / 2,
     PA_lower = (rl_pa50 + ll_pa50) / 2,
+    
     # Segmental variables other frequencies
-    R5_upper = (ra_z5 + la_z5) / 2,
-    R5_lower = (rl_z5 + ll_z5) / 2,
-    R250_upper = (ra_z250 + la_z250) / 2,
-    R250_lower = (rl_z250 + ll_z250) / 2,
+    R5_upper   = (ra_r5   + la_r5)   / 2,
+    R5_lower   = (rl_r5   + ll_r5)   / 2,
+    R250_upper = (ra_r250 + la_r250) / 2,
+    R250_lower = (rl_r250 + ll_r250) / 2,
+
     Xc5_upper = (ra_xc5 + la_xc5) / 2,
     Xc5_lower = (rl_xc5 + ll_xc5) / 2,
     Xc250_upper = (ra_xc250 + la_xc250) / 2,
@@ -350,6 +352,14 @@ df <- df %>%
     PA5_lower = (rl_pa5 + ll_pa5) / 2,
     PA250_upper = (ra_pa250 + la_pa250) / 2,
     PA250_lower = (rl_pa250 + ll_pa250) / 2,
+    
+    # --- ĐOẠN MỚI: biến toàn thân theo bài Frontiers ---
+    #BMR_m = bmr * (ffm^(-0.25)),
+    #BSA   = (1/6) * (weight * (height/100))^0.5,
+    #Vol_BSA = weight / BSA,
+    #Ri_Re_upper = (R_upper_250 - R_upper_5) / R_upper_5,
+    #Ri_Re_lower = (R_lower_250 - R_lower_5) / R_lower_5,
+    
     SEX = recode(SEX, "M" = "Male", "F" = "Female")
   ) %>%
   rename(
@@ -499,17 +509,6 @@ label_clean <- function(x) {
 # Áp dụng cho diagnosis và các nhãn categorical quan trọng
 label_vars <- c("COGNITIVESTAT", "diagnosis", "SEX", "ApoeE4")
 df0[label_vars] <- lapply(df0[label_vars], label_clean)
-
-# Chuẩn hóa diagnosis mapping
-# Thêm tất cả khả năng spelling/case về các nhóm chính
-df0$diagnosis_std <- dplyr::case_when(
-  df0$COGNITIVESTAT %in% c("cn","smi")         ~ "CN",
-  df0$COGNITIVESTAT %in% c("amci","namci")     ~ "MCI",
-  df0$COGNITIVESTAT == "ad"                    ~ "AD",
-  TRUE                                         ~ NA_character_
-)
-# Nếu cần vẫn giữ diagnosis cũ để check sau này
-df0$diagnosis_raw <- df0$diagnosis
 
 # Tiếp tục các xử lý khác dựa trên df0$diagnosis_std thay vì diagnosis gốc
 
