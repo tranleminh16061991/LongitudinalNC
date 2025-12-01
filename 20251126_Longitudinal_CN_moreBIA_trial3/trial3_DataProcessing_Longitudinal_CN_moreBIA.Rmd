@@ -496,7 +496,7 @@ print(missing_report_nonzero)
 ```
 
 ```{r}
-# ----------- 2a. Nâng cấp làm sạch diagnosis và các biến nhãn -----------
+# ----------- 2a. Làm sạch nhãn (nếu cần) -----------
 
 label_clean <- function(x) {
   x <- tolower(x)
@@ -506,86 +506,123 @@ label_clean <- function(x) {
   x
 }
 
-# Áp dụng cho diagnosis và các nhãn categorical quan trọng
 label_vars <- c("COGNITIVESTAT", "diagnosis", "SEX", "ApoeE4")
 df0[label_vars] <- lapply(df0[label_vars], label_clean)
 
-# Tiếp tục các xử lý khác dựa trên df0$diagnosis_std thay vì diagnosis gốc
+# ----------- (e) Flag outlier và tạo dataset full/clean trên dữ liệu đã impute -----------
 
-# ----------- (e) Flag outlier giữ dataset đầy đủ và dataset sạch -----------
-
-# Gán outlier flag (sử dụng giống đoạn script bạn đang làm, nhưng chỉ gắn cờ thay vì filter loại khỏi dataset):
+# Các biến dùng để tính z-score và flag outlier
 vars_check_outlier <- c(
-  "AGE","bmi", "whr", "pbcm", "pbf", "bmr", "icw", "ecw", "tbw", "protein", "smm", "amc",
-  "R_upper", "R_lower", "Xc_upper", "Xc_lower", "PA_upper", "PA_lower",
-  "SW_upper", "SW_lower", "SL_upper", "SL_lower","sw_tr", "sl_tr",
-  "R5_upper", "R5_lower",
-  "Xc5_upper", "Xc5_lower", "z1_upper", "z1_lower", "z5_upper", "z5_lower"
+  "AGE","bmi","whr","pbcm","pbf","bmr","icw","ecw","tbw","protein","smm","amc",
+  "R_upper","R_lower","Xc_upper","Xc_lower","PA_upper","PA_lower",
+  "SW_upper","SW_lower","SL_upper","SL_lower","sw_tr","sl_tr",
+  "R5_upper","R5_lower",
+  "Xc5_upper","Xc5_lower","z1_upper","z1_lower","z5_upper","z5_lower"
 )
-vars_exist <- vars_check_outlier[vars_check_outlier %in% names(df)]
 
-zscore_func <- function(x) (x - mean(x, na.rm=TRUE)) / sd(x, na.rm=TRUE)
-df <- df %>%
-  mutate(across(all_of(vars_exist), zscore_func, .names = "{.col}_z"))
+# Hàm z-score
+zscore_func <- function(x) {
+  (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+}
 
-# Flag outlier
-df <- df %>%
-  mutate(outlier_extreme = ifelse(rowSums(across(ends_with("_z"), ~abs(.) > 3), na.rm = TRUE) > 0, 1, 0)) # 1: outlier, 0: clean
+# Làm việc trên dữ liệu đã impute
+df2 <- df_imputed
 
-# Dataframe đầy đủ (có flag)
-df_full <- df
+# Chỉ giữ những biến outlier thực sự tồn tại trong df2
+vars_exist <- vars_check_outlier[vars_check_outlier %in% names(df2)]
 
-# Dataframe đã loại outlier
-df_clean <- df_full %>% filter(outlier_extreme == 0)
-
-# Lưu 2 version:
-write.csv(df_full, "Chosun5y_BIApreprocess_full_with_outlier_flag.csv", row.names=FALSE)
-write.csv(df_clean, "Chosun5y_BIApreprocess_clean.csv", row.names=FALSE)
-
-# ---------- Báo cáo tổng hợp/chất lượng mẫu ----------
-cat("TỔNG HỢP SỐ LƯỢNG CASE:\n")
-cat("Tổng số subject (full):", length(unique(df_full$USUBJID)), "\n")
-cat("Tổng số subject (clean):", length(unique(df_clean$USUBJID)), "\n")
-cat("Số đo trung bình mỗi subject (full):", round(nrow(df_full)/length(unique(df_full$USUBJID)),2), "\n")
-cat("Số đo trung bình mỗi subject (clean):", round(nrow(df_clean)/length(unique(df_clean$USUBJID)),2), "\n")
-cat("Tỷ lệ còn missing trên từng biến chính (full):\n")
-vars_main <- c("MMSE","SNSB_attention","SNSB_language","bmi","whr","PA50_total")
-print(sapply(df_full[vars_main], function(x) sum(is.na(x))/length(x)*100))
-cat("Tỷ lệ còn missing trên từng biến chính (clean):\n")
-print(sapply(df_clean[vars_main], function(x) sum(is.na(x))/length(x)*100))
-
-# ---------- Xuất danh sách outlier detail và biến thiếu ----------
-# file outlier
-outlier_rows <- df_full %>% filter(outlier_extreme == 1)
-outlier_info <- outlier_rows %>%
-  rowwise() %>%
-  mutate(
-    outlier_vars = paste(
-      vars_exist[unlist(across(all_of(paste0(vars_exist, "_z")), ~abs(.) > 3))],
-      collapse = ", "
-    ),
-    max_zscore = max(unlist(across(ends_with("_z"))), na.rm = TRUE)
+# Tính z-score và flag outlier (|z| > 3 trên bất kỳ biến nào trong vars_exist)
+df2 <- df2 %>%
+  dplyr::mutate(
+    dplyr::across(all_of(vars_exist), zscore_func, .names = "{.col}_z")
   ) %>%
-  ungroup()
-write.csv(outlier_info, "outlier_cases_detail_LOG.csv", row.names=FALSE)
+  dplyr::mutate(
+    outlier_extreme = dplyr::if_else(
+      rowSums(dplyr::across(dplyr::ends_with("_z"), ~ abs(.) > 3), na.rm = TRUE) > 0,
+      1L, 0L
+    )
+  )
 
-# file missing
+# Dataframe đầy đủ (có flag) và dataframe đã loại outlier
+df_full  <- df2
+df_clean <- df2 %>% dplyr::filter(outlier_extreme == 0)
+
+# Lưu 2 version
+write.csv(df_full,  "Chosun5y_BIApreprocess_full_with_outlier_flag.csv", row.names = FALSE)
+write.csv(df_clean, "Chosun5y_BIApreprocess_clean.csv",              row.names = FALSE)
+
+# ---------- Báo cáo tổng hợp / chất lượng mẫu ----------
+
+cat("TỔNG HỢP SỐ LƯỢNG CASE:\n")
+cat("Tổng số subject (full):",  length(unique(df_full$USUBJID)),  "\n")
+cat("Tổng số subject (clean):", length(unique(df_clean$USUBJID)), "\n")
+cat("Số đo trung bình mỗi subject (full):",
+    round(nrow(df_full)  / length(unique(df_full$USUBJID)),  2), "\n")
+cat("Số đo trung bình mỗi subject (clean):",
+    round(nrow(df_clean) / length(unique(df_clean$USUBJID)), 2), "\n")
+
+# Biến chính để báo cáo missing: 6 nhận thức + toàn bộ vars_check_outlier
+vars_main <- c(
+  "MMSE","SNSB_attention","SNSB_language",
+  "SNSB_visuospatial","SNSB_memory","SNSB_frontal",
+  vars_check_outlier
+)
+
+# Chỉ giữ các biến thực sự tồn tại
+vars_main <- unique(vars_main[vars_main %in% names(df_full)])
+
+cat("Tỷ lệ còn missing trên từng biến chính (full):\n")
+print(sapply(df_full[vars_main],  function(x) sum(is.na(x)) / length(x) * 100))
+
+cat("Tỷ lệ còn missing trên từng biến chính (clean):\n")
+print(sapply(df_clean[vars_main], function(x) sum(is.na(x)) / length(x) * 100))
+
+# ---------- Xuất danh sách outlier detail ----------
+
+outlier_rows <- df_full %>% dplyr::filter(outlier_extreme == 1)
+
+if (nrow(outlier_rows) == 0) {
+  cat("Không có outlier nào (theo ngưỡng |z| > 3).\n")
+  outlier_info <- outlier_rows
+} else {
+  outlier_info <- outlier_rows %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(
+      outlier_vars = paste(
+        vars_exist[
+          unlist(dplyr::across(
+            dplyr::all_of(paste0(vars_exist, "_z")),
+            ~ abs(.) > 3
+          ))
+        ],
+        collapse = ", "
+      ),
+      max_zscore = max(unlist(dplyr::across(dplyr::ends_with("_z"))), na.rm = TRUE)
+    ) %>%
+    dplyr::ungroup()
+}
+write.csv(outlier_info, "outlier_cases_detail_LOG.csv", row.names = FALSE)
+
+# ---------- Báo cáo biến còn missing (toàn bộ biến) ----------
+
 missing_report_nonzero <- sapply(df_full, function(x) sum(is.na(x)))
-missing_report_nonzero <- data.frame(Variable=names(missing_report_nonzero), Missing_Count=missing_report_nonzero)
-missing_report_nonzero <- missing_report_nonzero %>% dplyr::filter(Missing_Count > 0)
-#write.csv(missing_report_nonzero, "missing_cases_report_LOG.csv", row.names=FALSE)
+missing_report_nonzero <- data.frame(
+  Variable      = names(missing_report_nonzero),
+  Missing_Count = as.integer(missing_report_nonzero)
+)
+missing_report_nonzero <- missing_report_nonzero %>%
+  dplyr::filter(Missing_Count > 0)
+# write.csv(missing_report_nonzero, "missing_cases_report_LOG.csv", row.names = FALSE)
 
-# ---------- Báo cáo số lần mỗi biến xuất hiện trong outlier_vars (in ra console) ----------
+# ---------- Tần suất mỗi biến bị flag outlier ----------
 
 if (nrow(outlier_info) == 0) {
   cat("Không có outlier nào (theo ngưỡng |z| > 3).\n")
 } else {
-  # Tách các tên biến trong outlier_vars thành vector
   outlier_var_vec <- strsplit(outlier_info$outlier_vars, split = ",\\s*")
   outlier_var_vec <- unlist(outlier_var_vec)
-  outlier_var_vec <- outlier_var_vec[outlier_var_vec != ""]  # bỏ chuỗi rỗng nếu có
+  outlier_var_vec <- outlier_var_vec[outlier_var_vec != ""]
   
-  # Đếm tần suất từng biến
   outlier_counts <- sort(table(outlier_var_vec), decreasing = TRUE)
   
   cat("\nSỐ LẦN MỖI BIẾN BỊ FLAG LÀ OUTLIER (|z| > 3):\n")

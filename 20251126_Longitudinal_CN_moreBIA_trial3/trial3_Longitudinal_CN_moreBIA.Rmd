@@ -263,6 +263,26 @@ cat("Table 3 exported as .csv file in", output_dir, "\n")
 ```
 
 ```{r}
+MRIPET_summary <- df_baseline %>%
+filter(Change_Type %in% c("StableCN", "CNtransitMCI")) %>%
+group_by(Change_Type) %>%
+summarise(
+n_total = n(),
+n_positive = sum(MRIPET == "positive", na.rm = TRUE),
+n_negative = sum(MRIPET == "negative", na.rm = TRUE),
+n_NA = sum(is.na(MRIPET)),
+pct_positive = 100 * n_positive / n_total,
+pct_negative = 100 * n_negative / n_total,
+pct_NA = 100 * n_NA / n_total,
+.groups = "drop"
+)
+
+print(MRIPET_summary)
+
+
+```
+
+```{r}
 bia_vars <- c("SNSB_attention","SNSB_language", "SNSB_visuospatial", "SNSB_memory", "SNSB_frontal","bmi","whr","pbcm","pbf","bmr","icw", "ecw", "tbw", "protein", "amc",
               "R_upper","R_lower","Xc_upper","Xc_lower",
               "PA_upper","PA_lower", "SW_upper", "SW_lower", "SL_upper", "SL_lower","SL_tr", "SL_tr",
