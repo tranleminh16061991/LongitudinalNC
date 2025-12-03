@@ -43,11 +43,11 @@ library(tidyverse)
 
 ```{r}
 df0 <- read.csv("Chosun5yoriginal.csv", stringsAsFactors = FALSE)
+
+valid_states <- c("CN", "SMI", "aMCI", "naMCI", "AD")
 df0$COGNITIVESTAT <- trimws(df0$COGNITIVESTAT)
 df0$COGNITIVESTAT <- gsub("[[:punct:]]", "", df0$COGNITIVESTAT)
 df0$COGNITIVESTAT <- gsub(" ", "", df0$COGNITIVESTAT)
-
-valid_states <- c("CN", "SMI", "aMCI", "naMCI", "AD")
 df0$COGNITIVESTAT <- ifelse(df0$COGNITIVESTAT %in% valid_states, df0$COGNITIVESTAT, NA)
 df0$diagnosis <- ifelse(df0$COGNITIVESTAT %in% c("CN", "SMI"), "CN",
                     ifelse(df0$COGNITIVESTAT %in% c("aMCI", "naMCI"), "MCI",
@@ -109,7 +109,7 @@ table(df0$ApoeE4)
 table(df0$MRIPET)
 table(df0$Cold_Heat_Pattern, useNA = "always")
 
-df <- df0 %>% select(
+df_pre_imputed <- df0 %>% select(
   k_no, USUBJID, datetest,
     ApoeE4, COGNITIVESTAT, diagnosis,
     coldheat23Final, Cold_Heat_Pattern,
@@ -138,7 +138,7 @@ df <- df0 %>% select(
     MMSE, SNSB_attention, SNSB_language, SNSB_visuospatial, SNSB_memory, SNSB_frontal
   )
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   mutate(
     ra_r5   = sqrt(ra_z5^2   - ra_xc5^2),
     ra_r50  = sqrt(ra_z50^2  - ra_xc50^2),
@@ -157,7 +157,7 @@ df <- df %>%
     ll_r250 = sqrt(ll_z250^2 - ll_xc250^2)
   )
 
-df3 <- df %>% 
+df3 <- df_pre_imputed%>% 
   select(
     k_no, 
     ra_z5, ra_z50, ra_z250,
@@ -290,13 +290,13 @@ clean_numeric <- function(x) {
   as.numeric(x)
 }
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   mutate(across(all_of(numeric_vars), clean_numeric))       
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   mutate(across(all_of(factor_vars), as.factor))            
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   mutate(
     pbcm = bcm / weight * 100,
     ecw_tbw = ecw_tbw_total * 100,
@@ -373,13 +373,13 @@ df <- df %>%
     SL_tr = sl_tr
   )
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   filter(AGE >= 55) %>%
   filter(diagnosis %in% c("CN", "MCI", "AD")) %>%
   filter(!(k_no %in% c(imp.lst, "G_26", "G_30", "a_407", "a_432"))) %>%
   droplevels()
 
-df <- df %>%
+df_pre_imputed<- df_pre_imputed%>%
   mutate(
     EDUYR = ifelse(EDUYR %in% c(99, 999, NA), 9, EDUYR),
     # Ghi đè các giá trị bất hợp lý của bmi
@@ -423,7 +423,7 @@ cog_vars <- c("MMSE",
               "SNSB_visuospatial", "SNSB_memory", "SNSB_frontal")
 
 # 3. Lấy các biến cần thiết từ df
-df_cog <- df %>%
+df_cog <- df_pre_imputed%>%
   select(k_no, diagnosis, all_of(cog_vars))
 
 # 4. Kiểm tra missing trên từng biến (in ra tỷ lệ %)
@@ -451,7 +451,7 @@ imputed_list <- lapply(df_cog_split, pmm_mice)
 df_cog_imputed <- bind_rows(imputed_list)
 
 # 8. Ghép dữ liệu đã impute về các biến nhận thức trở lại bảng df gốc (các cột khác giữ nguyên giá trị ban đầu)
-df_imputed <- df %>%
+df_imputed <- df_pre_imputed%>%
   select(-any_of(cog_vars)) %>%
   left_join(df_cog_imputed %>% select(k_no, diagnosis, all_of(cog_vars)),
             by = c("k_no", "diagnosis"))
@@ -496,19 +496,6 @@ print(missing_report_nonzero)
 ```
 
 ```{r}
-# ----------- 2a. Làm sạch nhãn (nếu cần) -----------
-
-label_clean <- function(x) {
-  x <- tolower(x)
-  x <- stringr::str_trim(x)
-  x <- stringr::str_replace_all(x, "[[:punct:]]", "")
-  x <- stringr::str_replace_all(x, " ", "")
-  x
-}
-
-label_vars <- c("COGNITIVESTAT", "diagnosis", "SEX", "ApoeE4")
-df0[label_vars] <- lapply(df0[label_vars], label_clean)
-
 # ----------- (e) Flag outlier và tạo dataset full/clean trên dữ liệu đã impute -----------
 
 # Các biến dùng để tính z-score và flag outlier
